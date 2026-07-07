@@ -1,0 +1,24 @@
+# API key — NEVER commit this
+apikey.txt
+
+# SQLite database (contains your personal portfolio data)
+data/portfolio.db
+*.db
+
+# Build artifacts
+*.exe
+*.obj
+*.pdb
+*.ilk
+build/
+x64/
+Debug/
+Release/
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+
+# OS junk
+Thumbs.db
+.DS_Store

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="background">
+  <div class="grid"></div>
+  <div class="glow glow1"></div>
+  <div class="glow glow2"></div>
+</div>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar glass">
+    <div class="logo">
+      <div class="logo-box">PE</div>
+      <div>
+        <h2>Portfolio Engine</h2>
+        <p>C++ Portfolio Intelligence</p>
+      </div>
+    </div>
+    <nav>
+      <span class="nav-label">Portfolio</span>
+      <a href="#" class="nav-link active" data-section="overview">
+        <i class="fa-solid fa-house"></i><span>Overview</span>
+      </a>
+      <a href="#" class="nav-link" data-section="holdings">
+        <i class="fa-solid fa-wallet"></i><span>Holdings</span>
+      </a>
+      <a href="#" class="nav-link" data-section="performance">
+        <i class="fa-solid fa-chart-line"></i><span>Performance</span>
+      </a>
+      <span class="nav-label">Alerts</span>
+      <a href="#" class="nav-link" data-section="alerts">
+        <i class="fa-solid fa-bell"></i><span>Alert History</span>
+        <span class="nav-badge" id="alertCountBadge">0</span>
+      </a>
+      <a href="#" class="nav-link" id="navSetAlert">
+        <i class="fa-solid fa-bell-concierge"></i><span>Set Alert</span>
+      </a>
+      <span class="nav-label">Manage</span>
+      <a href="#" class="nav-link" id="navAddPosition">
+        <i class="fa-solid fa-circle-plus"></i><span>Add Position</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="status-pill" id="dbStatusPill">
+        <span class="status-dot" id="dbDot"></span>
+        <span id="dbStatusText">SQLite checking…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <header class="topbar glass">
+      <div class="topbar-left">
+        <h1>Overview</h1>
+        <p>Real-time portfolio summary and performance</p>
+      </div>
+      <div class="topbar-right">
+        <div class="status-pill" id="backendStatusPill">
+          <span class="status-dot" id="backendDot"></span>
+          <span id="backendStatusText">Connecting…</span>
+        </div>
+        <div class="clock">
+          <i class="fa-regular fa-clock"></i>
+          <span class="liveClock">--:--:--</span>
+        </div>
+        <div class="profile">PE</div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- STAT CARDS ROW 1 -->
+      <div class="stats-grid">
+        <div class="glass stat-card stat-card-main">
+          <span class="stat-label">Portfolio Value</span>
+          <h1 id="statPortfolioValue">$0.00</h1>
+          <span class="stat-sub" id="statTotalReturn">▲ 0.00% total return</span>
+        </div>
+        <div class="glass stat-card">
+          <span class="stat-label">Total P&amp;L</span>
+          <h2 id="statTotalPnl">$0.00</h2>
+          <span class="stat-sub" id="statTotalPnlSub">since open</span>
+        </div>
+        <div class="glass stat-card">
+          <span class="stat-label">Total Invested</span>
+          <h2 id="statTotalInvested">$0.00</h2>
+          <span class="stat-sub">cost basis</span>
+        </div>
+        <div class="glass stat-card">
+          <span class="stat-label">Holdings</span>
+          <h2 id="statHoldingsCount">0</h2>
+          <span class="stat-sub">positions</span>
+        </div>
+      </div>
+
+      <!-- STAT CARDS ROW 2 -->
+      <div class="stats-grid stats-grid-small">
+        <div class="glass mini-card">
+          <i class="fa-solid fa-trophy mini-icon green"></i>
+          <div><small>Best Performer</small><h3 id="statBest">—</h3></div>
+        </div>
+        <div class="glass mini-card">
+          <i class="fa-solid fa-arrow-trend-down mini-icon red"></i>
+          <div><small>Worst Performer</small><h3 id="statWorst">—</h3></div>
+        </div>
+        <div class="glass mini-card">
+          <i class="fa-solid fa-bell mini-icon"></i>
+          <div><small>Triggered Alerts</small><h3 id="statAlertCount">0</h3></div>
+        </div>
+        <div class="glass mini-card">
+          <i class="fa-solid fa-server mini-icon"></i>
+          <div><small>Last Update</small><h3 id="statLastUpdate">—</h3></div>
+        </div>
+      </div>
+
+      <!-- DASHBOARD GRID -->
+      <div class="dashboard-grid">
+
+        <div class="center-column">
+
+          <div class="glass graph-card">
+            <div class="graph-header">
+              <div>
+                <h3>Portfolio Performance</h3>
+                <p>Persisted history · saved every 30s by the monitor thread</p>
+              </div>
+              <div class="graph-tabs">
+                <button class="active" id="clearChartBtn" title="Reload history from database">
+                  <i class="fa-solid fa-rotate-right"></i> Refresh
+                </button>
+              </div>
+            </div>
+            <div class="fake-chart">
+              <canvas id="portfolioChart"></canvas>
+            </div>
+          </div>
+
+          <section class="glass holdings-section">
+            <div class="table-header">
+              <h2>Current Holdings</h2>
+              <button id="openAddPositionBtn"><i class="fa-solid fa-plus"></i> Add Position</button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Company</th>
+                    <th>Shares</th>
+                    <th>Avg Price</th>
+                    <th>Current</th>
+                    <th>Market Value</th>
+                    <th>P&amp;L</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="holdingsTableBody">
+                  <tr><td colspan="8" class="empty-row">Loading holdings…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+        </div>
+
+        <div class="right-column">
+
+          <div class="glass alerts-card">
+            <div class="panel-title">
+              <h3>Recent Alerts</h3>
+              <span class="live-badge">LIVE</span>
+            </div>
+            <div id="alertsList" class="alerts-list">
+              <div class="empty-row">No alerts triggered yet.</div>
+            </div>
+          </div>
+
+          <div class="glass quick-actions-card">
+            <h3>Quick Actions</h3>
+            <button class="quick-action" id="qaAddPosition">
+              <div class="qa-icon"><i class="fa-solid fa-circle-plus"></i></div>
+              <div>
+                <strong>Add Position</strong>
+                <small>Add a new stock to your portfolio</small>
+              </div>
+            </button>
+            <button class="quick-action" id="qaSetAlert">
+              <div class="qa-icon"><i class="fa-solid fa-bell"></i></div>
+              <div>
+                <strong>Set Alert</strong>
+                <small>Create or manage price alerts</small>
+              </div>
+            </button>
+          </div>
+
+          <span id="healthBackend" style="display:none"></span>
+          <span id="healthDb"      style="display:none"></span>
+          <span id="healthFinnhub" style="display:none"></span>
+          <span id="healthAlerts"  style="display:none"></span>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modalOverlay">
+
+  <div class="modal glass" id="addPositionModal">
+    <div class="modal-header">
+      <h3>Add Position</h3>
+      <button class="modal-close" data-close>×</button>
+    </div>
+    <form id="addPositionForm">
+      <label>Ticker Symbol</label>
+      <input type="text" id="apTicker" placeholder="e.g. AAPL" required maxlength="10" autocomplete="off">
+      <label>Buy Price ($)</label>
+      <input type="number" id="apBuyPrice" placeholder="184.12" step="0.01" min="0" required>
+      <small id="apPriceHint" style="color:#18f2b2;font-size:12px;margin-top:-8px;display:block;"></small>
+      <label>Quantity</label>
+      <input type="number" id="apQuantity" placeholder="10" min="1" step="1" required>
+      <div class="modal-error" id="apError"></div>
+      <button type="submit" class="modal-submit">Add to Portfolio</button>
+    </form>
+  </div>
+
+  <div class="modal glass modal-wide" id="setAlertModal">
+    <div class="modal-header">
+      <h3>Price Alerts</h3>
+      <button class="modal-close" data-close>×</button>
+    </div>
+
+    <!-- Create new alert -->
+    <div class="alert-modal-section">
+      <h4 class="section-subtitle">Create New Alert</h4>
+      <form id="setAlertForm">
+        <div class="alert-form-row">
+          <div class="alert-form-field">
+            <label>Ticker</label>
+            <input type="text" id="saTicker" placeholder="e.g. TSLA" required maxlength="10" autocomplete="off">
+          </div>
+          <div class="alert-form-field">
+            <label>Condition</label>
+            <select id="saCondition">
+              <option value="ABOVE">Price ABOVE</option>
+              <option value="BELOW">Price BELOW</option>
+            </select>
+          </div>
+          <div class="alert-form-field">
+            <label>Threshold ($)</label>
+            <input type="number" id="saThreshold" placeholder="350.00" step="0.01" min="0" required>
+          </div>
+        </div>
+        <div class="modal-error" id="saError"></div>
+        <button type="submit" class="modal-submit">Create Alert</button>
+      </form>
+    </div>
+
+    <!-- Active alerts list -->
+    <div class="alert-modal-section" style="margin-top:22px;">
+      <h4 class="section-subtitle">Active Alerts
+        <span style="font-size:11px;color:var(--grey);font-weight:400;margin-left:8px;">
+          <i class="fa-solid fa-rotate-right" style="color:var(--green)"></i> = reset &nbsp;
+          <i class="fa-solid fa-trash" style="color:var(--red)"></i> = delete
+        </span>
+      </h4>
+      <div id="activeAlertsList" class="alerts-list" style="max-height:220px;">
+        <div class="empty-row">Loading…</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
