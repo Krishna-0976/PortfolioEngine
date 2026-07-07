@@ -416,8 +416,6 @@ document.getElementById("clearChartBtn")?.addEventListener("click", () => {
 /* ===========================================================
    MAIN REFRESH
 =========================================================== */
-const SESSION_START = new Date().toISOString();
-
 async function refreshAll() {
   const [summary, portfolio, alerts] = await Promise.all([
     safeGet("/summary"), safeGet("/portfolio"), safeGet("/alerts"),
@@ -428,14 +426,11 @@ async function refreshAll() {
 
   if (portfolio) { lastPortfolio = portfolio; renderHoldings(portfolio); }
   if (summary || portfolio) renderStats(summary || {}, lastPortfolio);
-  // Only show alerts triggered AFTER this session started
-  const freshAlerts = alerts ? alerts.filter(a => {
-    if (!a.timestamp) return false;
-    const t = new Date(a.timestamp.replace(" ", "T") + "Z");
-    return t >= new Date(SESSION_START);
-  }) : null;
-  if (freshAlerts) renderAlerts(freshAlerts);
+  if (alerts) renderAlerts(alerts);
   loadChartHistory();
+  // Keep active alerts panel live if modal is open
+  const alertModal = document.getElementById("setAlertModal");
+  if (alertModal && alertModal.classList.contains("open")) renderActiveAlerts();
 }
 
 /* ===========================================================
@@ -517,9 +512,9 @@ document.getElementById("setAlertForm")?.addEventListener("submit", async e => {
   btn.disabled = true; btn.textContent = "Creating…";
   try {
     await apiPost("/alert", { ticker, threshold, condition });
-    showToast(`Alert set: ${ticker} ${condition} $${threshold.toFixed(2)}`, "success");
+    showToast(`⚡ Alert created: ${ticker} ${condition} $${threshold.toFixed(2)}`, "success");
     e.target.reset();
-    renderActiveAlerts();
+    await renderActiveAlerts();
   } catch { errEl.textContent = "Couldn't reach backend."; }
   finally { btn.disabled = false; btn.textContent = "Create Alert"; }
 });

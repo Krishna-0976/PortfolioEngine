@@ -12,10 +12,7 @@ struct Alert {
     std::string ticker;
     double threshold;
     std::string condition;
-
-    bool operator>(const Alert& other) const {
-        return threshold > other.threshold;
-    }
+    bool operator>(const Alert& other) const { return threshold > other.threshold; }
 };
 
 class AlertEngine {
@@ -37,44 +34,35 @@ public:
 
     void loadFiredStateFromHistory() {
         if (!db) return;
-        auto history = db->getAlertHistory(); // Database has its own lock; call before locking ours
+        auto history = db->getAlertHistory();
         std::lock_guard<std::mutex> lock(mtx);
-        for (auto& row : history) {
-            std::string key = alertKey(std::get<0>(row), std::get<1>(row), std::get<2>(row));
-            firedState[key] = true;
-        }
-        std::cout << "[AlertEngine] Loaded " << history.size() << " fired states from DB." << std::endl;
+        for (auto& row : history)
+            firedState[alertKey(std::get<0>(row), std::get<1>(row), std::get<2>(row))] = true;
+        std::cout << "[AlertEngine] " << history.size() << " fired states loaded.\n";
     }
 
     void loadActiveAlertsFromDB() {
         if (!db) return;
-        auto active = db->getActiveAlerts(); // fetch outside our lock to avoid nested locking
+        auto active = db->getActiveAlerts();
         std::lock_guard<std::mutex> lock(mtx);
         for (auto& row : active) {
-            Alert a;
-            a.ticker    = std::get<0>(row);
-            a.condition = std::get<1>(row);
-            a.threshold = std::get<2>(row);
+            Alert a{ std::get<0>(row), std::get<2>(row), std::get<1>(row) };
             minHeap.push(a);
             std::string key = alertKey(a.ticker, a.condition, a.threshold);
             if (firedState.find(key) == firedState.end())
                 firedState[key] = false;
         }
-        std::cout << "[AlertEngine] Reloaded " << active.size() << " active alert(s) from DB.\n";
+        std::cout << "[AlertEngine] " << active.size() << " active alert(s) loaded.\n";
     }
 
     void addAlert(const std::string& ticker, double threshold, const std::string& condition) {
         {
             std::lock_guard<std::mutex> lock(mtx);
-            Alert a;
-            a.ticker    = ticker;
-            a.threshold = threshold;
-            a.condition = condition;
-            minHeap.push(a);
+            minHeap.push({ ticker, threshold, condition });
             firedState[alertKey(ticker, condition, threshold)] = false;
         }
-        if (db) db->saveAlert(ticker, condition, threshold); // Database locks itself
-        std::cout << "Alert set: " << ticker << " " << condition << " $" << threshold << std::endl;
+        if (db) db->saveAlert(ticker, condition, threshold);
+        std::cout << "[Alert] Set: " << ticker << " " << condition << " $" << threshold << "\n";
     }
 
     void removeAlert(const std::string& ticker, const std::string& condition, double threshold) {
@@ -87,19 +75,17 @@ public:
         }
         for (auto& a : remaining) minHeap.push(a);
         firedState.erase(alertKey(ticker, condition, threshold));
-        std::cout << "[AlertEngine] Removed alert: " << ticker << " " << condition << " $" << threshold << "\n";
+        std::cout << "[Alert] Removed: " << ticker << " " << condition << " $" << threshold << "\n";
     }
 
     void resetAlert(const std::string& ticker, const std::string& condition, double threshold) {
         std::lock_guard<std::mutex> lock(mtx);
         firedState[alertKey(ticker, condition, threshold)] = false;
-        std::cout << "[AlertEngine] Reset alert: " << ticker << " " << condition << " $" << threshold << "\n";
+        std::cout << "[Alert] Reset: " << ticker << " " << condition << " $" << threshold << "\n";
     }
 
     void checkAlerts(const std::string& ticker, double livePrice) {
-        std::vector<std::pair<std::string, double>> toRecord; // {condition+threshold info deferred to after unlock}
-        std::vector<std::tuple<std::string, double, double>> triggered; // condition, threshold, livePrice
-
+        std::vector<std::tuple<std::string, double, double>> triggered;
         {
             std::lock_guard<std::mutex> lock(mtx);
             std::vector<Alert> remaining;
@@ -107,16 +93,16 @@ public:
                 Alert top = minHeap.top(); minHeap.pop();
                 if (top.ticker == ticker) {
                     std::string key = alertKey(top.ticker, top.condition, top.threshold);
-                    bool conditionMet     = (top.condition == "BELOW" && livePrice <  top.threshold)
-                                         || (top.condition == "ABOVE" && livePrice >  top.threshold);
-                    bool conditionCleared = (top.condition == "BELOW" && livePrice >= top.threshold)
-                                         || (top.condition == "ABOVE" && livePrice <= top.threshold);
-                    if (conditionMet && !firedState[key]) {
-                        std::cout << "ALERT TRIGGERED: " << ticker << " " << top.condition
-                                  << " $" << top.threshold << " | Live: $" << livePrice << std::endl;
-                        triggered.push_back({top.condition, top.threshold, livePrice});
+                    bool met     = (top.condition == "BELOW" && livePrice <  top.threshold)
+                                || (top.condition == "ABOVE" && livePrice >  top.threshold);
+                    bool cleared = (top.condition == "BELOW" && livePrice >= top.threshold)
+                                || (top.condition == "ABOVE" && livePrice <= top.threshold);
+                    if (met && !firedState[key]) {
+                        std::cout << "[ALERT] " << ticker << " " << top.condition
+                                  << " $" << top.threshold << " | Live: $" << livePrice << "\n";
+                        triggered.push_back({ top.condition, top.threshold, livePrice });
                         firedState[key] = true;
-                    } else if (conditionCleared) {
+                    } else if (cleared) {
                         firedState[key] = false;
                     }
                 }
@@ -124,20 +110,16 @@ public:
             }
             for (auto& a : remaining) minHeap.push(a);
         }
-
-        // Call into Database (which locks itself) only after releasing our own lock,
-        // to avoid holding two locks / risking deadlock across classes.
-        if (db) {
+        if (db)
             for (auto& t : triggered)
                 db->saveAlertHistory(ticker, std::get<0>(t), std::get<1>(t), std::get<2>(t));
-        }
     }
 
     void clearAllAlerts() {
         std::lock_guard<std::mutex> lock(mtx);
         while (!minHeap.empty()) minHeap.pop();
         firedState.clear();
-        std::cout << "[AlertEngine] All alerts cleared." << std::endl;
+        std::cout << "[AlertEngine] All alerts cleared.\n";
     }
 
     int size() {

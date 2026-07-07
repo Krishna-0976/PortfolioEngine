@@ -1,24 +1,23 @@
-# API key — NEVER commit this
+# Compiled output
+main.exe
+main.obj
+sqlite3.obj
+
+# Database
+data/portfolio.db
+
+# API key — never commit this
 apikey.txt
 
-# SQLite database (contains your personal portfolio data)
-data/portfolio.db
-*.db
-
 # Build artifacts
-*.exe
-*.obj
 *.pdb
 *.ilk
-build/
-x64/
-Debug/
-Release/
 
-# Visual Studio
-.vs/
-*.vcxproj.user
+# VS Code
+.vscode/
 
-# OS junk
-Thumbs.db
-.DS_Store
+# Large vendor files (too big for GitHub, user installs separately)
+include/httplib.h
+include/json.hpp
+include/sqlite3.c
+include/sqlite3.h
