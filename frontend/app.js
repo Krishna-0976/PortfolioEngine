@@ -71,6 +71,7 @@ function playAlertSound() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const ctx = audioCtx;
+    if (ctx.state === "suspended") ctx.resume();
     [[880, 0, 0.15], [660, 0.2, 0.15]].forEach(([freq, startOffset, dur]) => {
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -85,6 +86,18 @@ function playAlertSound() {
     });
   } catch(e) { console.warn("Audio failed:", e); }
 }
+
+// Browsers block audio from playing until a real user gesture has occurred
+// on the page. Alerts fire from an automatic 30s timer, which doesn't count
+// as a gesture - so without this, the very first alert sound (and often
+// every one after it) would silently fail. This unlocks/resumes the audio
+// context on the user's first click anywhere on the page.
+function unlockAudioOnFirstInteraction() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  document.removeEventListener("click", unlockAudioOnFirstInteraction);
+}
+document.addEventListener("click", unlockAudioOnFirstInteraction);
 
 /* ===========================================================
    BROWSER NOTIFICATIONS
@@ -522,6 +535,13 @@ document.getElementById("setAlertForm")?.addEventListener("submit", async e => {
 /* ===========================================================
    SIDEBAR NAV
 =========================================================== */
+const sectionHeadings = {
+  overview:    { title: "Overview",      sub: "Real-time portfolio summary and performance" },
+  holdings:    { title: "Holdings",      sub: "All your current stock positions" },
+  performance: { title: "Performance",   sub: "Portfolio value over time" },
+  alerts:      { title: "Alert History", sub: "Price alerts that have triggered" },
+};
+
 document.querySelectorAll(".nav-link[data-section]").forEach(link => {
   link.addEventListener("click", e => {
     e.preventDefault();
@@ -529,6 +549,17 @@ document.querySelectorAll(".nav-link[data-section]").forEach(link => {
     link.classList.add("active");
     const targets = { overview:".stats-grid", holdings:".holdings-section", performance:".graph-card", alerts:".alerts-card" };
     document.querySelector(targets[link.dataset.section])?.scrollIntoView({ behavior:"smooth", block:"start" });
+
+    const heading = sectionHeadings[link.dataset.section];
+    if (heading) {
+      const topbar = document.querySelector(".topbar-left");
+      if (topbar) {
+        const h1 = topbar.querySelector("h1");
+        const p  = topbar.querySelector("p");
+        if (h1) h1.textContent = heading.title;
+        if (p)  p.textContent  = heading.sub;
+      }
+    }
   });
 });
 

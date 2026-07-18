@@ -14,72 +14,74 @@
 #include "alert_engine.h"
 #include "database.h"
 
+using namespace std;
+
 struct Stock {
-    std::string ticker;
+    string ticker;
     double buyPrice;
     int quantity;
 };
 
 class PortfolioMonitor {
 private:
-    std::vector<Stock> portfolio;
+    vector<Stock> portfolio;
     AlertEngine& engine;
     Database& db;
-    std::string apiKey;
-    std::mutex mtx;
-    std::unordered_map<std::string, double> priceCache;
-    std::atomic<bool> running{true};
-    std::thread monitorThread;
+    string apiKey;
+    mutex mtx;
+    unordered_map<string, double> priceCache;
+    atomic<bool> running{true};
+    thread monitorThread;
 
-    void monitorLoop(std::function<double(const std::string&, const std::string&)> fetchPrice) {
+    void monitorLoop(function<double(const string&, const string&)> fetchPrice) {
         while (running) {
-            std::cout << "\n[MONITOR] Checking prices...\n";
-            std::vector<Stock> snapshot;
-            { std::lock_guard<std::mutex> lock(mtx); snapshot = portfolio; }
+            cout << "\n[MONITOR] Checking prices...\n";
+            vector<Stock> snapshot;
+            { lock_guard<mutex> lock(mtx); snapshot = portfolio; }
 
             double totalValue = 0.0;
             for (auto& stock : snapshot) {
                 double price = fetchPrice(stock.ticker, apiKey);
                 {
-                    std::lock_guard<std::mutex> lock(mtx);
+                    lock_guard<mutex> lock(mtx);
                     if (price <= 0) {
                         auto it = priceCache.find(stock.ticker);
                         if (it != priceCache.end()) price = it->second;
-                        else { std::cout << "[MONITOR] " << stock.ticker << " fetch failed, skipping\n"; continue; }
+                        else { cout << "[MONITOR] " << stock.ticker << " fetch failed, skipping\n"; continue; }
                     } else {
                         priceCache[stock.ticker] = price;
                     }
                 }
                 double pnl = (price - stock.buyPrice) * stock.quantity;
                 totalValue += price * stock.quantity;
-                std::cout << stock.ticker << " | $" << price << " | P&L: $" << pnl << "\n";
+                cout << stock.ticker << " | $" << price << " | P&L: $" << pnl << "\n";
                 engine.checkAlerts(stock.ticker, price);
             }
             if (!snapshot.empty()) db.savePortfolioSnapshot(totalValue);
-            std::cout << "[MONITOR] Next check in 30s\n";
-            std::this_thread::sleep_for(std::chrono::seconds(30));
+            cout << "[MONITOR] Next check in 30s\n";
+            this_thread::sleep_for(chrono::seconds(30));
         }
     }
 
 public:
-    PortfolioMonitor(AlertEngine& eng, Database& database, const std::string& key)
+    PortfolioMonitor(AlertEngine& eng, Database& database, const string& key)
         : engine(eng), db(database), apiKey(key) {}
 
-    void addStock(const std::string& ticker, double buyPrice, int qty) {
-        std::lock_guard<std::mutex> lock(mtx);
+    void addStock(const string& ticker, double buyPrice, int qty) {
+        lock_guard<mutex> lock(mtx);
         portfolio.push_back({ticker, buyPrice, qty});
     }
 
-    void removeStock(const std::string& ticker) {
-        std::lock_guard<std::mutex> lock(mtx);
-        portfolio.erase(std::remove_if(portfolio.begin(), portfolio.end(),
+    void removeStock(const string& ticker) {
+        lock_guard<mutex> lock(mtx);
+        portfolio.erase(remove_if(portfolio.begin(), portfolio.end(),
             [&](const Stock& s) { return s.ticker == ticker; }), portfolio.end());
         priceCache.erase(ticker);
     }
 
-    void start(std::function<double(const std::string&, const std::string&)> fetchPrice) {
-        std::cout << "[MONITOR] Starting...\n";
-        monitorThread = std::thread(&PortfolioMonitor::monitorLoop, this, fetchPrice);
+    void start(function<double(const string&, const string&)> fetchPrice) {
+        cout << "[MONITOR] Starting...\n";
+        monitorThread = thread(&PortfolioMonitor::monitorLoop, this, fetchPrice);
     }
 
     void stop() {
@@ -87,13 +89,13 @@ public:
         if (monitorThread.joinable()) monitorThread.join();
     }
 
-    std::vector<Stock> getPortfolio() {
-        std::lock_guard<std::mutex> lock(mtx);
+    vector<Stock> getPortfolio() {
+        lock_guard<mutex> lock(mtx);
         return portfolio;
     }
 
-    double getCachedPrice(const std::string& ticker) {
-        std::lock_guard<std::mutex> lock(mtx);
+    double getCachedPrice(const string& ticker) {
+        lock_guard<mutex> lock(mtx);
         auto it = priceCache.find(ticker);
         return it != priceCache.end() ? it->second : -1.0;
     }

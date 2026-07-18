@@ -12,9 +12,11 @@
 #include "../include/server.h"
 #include "../include/database.h"
 
+using namespace std;
+
 using json = nlohmann::json;
 
-double fetchLivePrice(const std::string& ticker, const std::string& apiKey) {
+double fetchLivePrice(const string& ticker, const string& apiKey) {
     httplib::Client cli("https://finnhub.io");
     auto res = cli.Get(("/api/v1/quote?symbol=" + ticker + "&token=" + apiKey).c_str());
     if (res && res->status == 200)
@@ -23,7 +25,7 @@ double fetchLivePrice(const std::string& ticker, const std::string& apiKey) {
 }
 
 int main() {
-    std::string apiKey = loadApiKey();
+    string apiKey = loadApiKey();
     if (apiKey.empty()) return 1;
 
     Database db;
@@ -35,7 +37,7 @@ int main() {
 
     PortfolioMonitor monitor(engine, db, apiKey);
     for (const auto& stock : db.getAllStocks())
-        monitor.addStock(std::get<0>(stock), std::get<1>(stock), std::get<2>(stock));
+        monitor.addStock(get<0>(stock), get<1>(stock), get<2>(stock));
 
     monitor.start(fetchLivePrice);
 

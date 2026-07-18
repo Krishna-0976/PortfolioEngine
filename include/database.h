@@ -9,15 +9,17 @@
 #include <chrono>
 #include <atomic>
 
+using namespace std;
+
 class Database {
 private:
     sqlite3* db;
-    std::mutex mtx;
-    std::atomic<long long> totalWriteMicros{0};
-    std::atomic<long long> writeCount{0};
+    mutex mtx;
+    atomic<long long> totalWriteMicros{0};
+    atomic<long long> writeCount{0};
 
-    bool exec(const char* sql, const std::function<void(sqlite3_stmt*)>& bind) {
-        auto start = std::chrono::steady_clock::now();
+    bool exec(const char* sql, const function<void(sqlite3_stmt*)>& bind) {
+        auto start = chrono::steady_clock::now();
 
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
@@ -25,8 +27,8 @@ private:
         bool ok = sqlite3_step(stmt) == SQLITE_DONE;
         sqlite3_finalize(stmt);
 
-        auto end = std::chrono::steady_clock::now();
-        auto micros = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        auto end = chrono::steady_clock::now();
+        auto micros = chrono::duration_cast<chrono::microseconds>(end - start).count();
         totalWriteMicros += micros;
         writeCount++;
 
@@ -36,7 +38,7 @@ private:
 public:
     Database() {
         if (sqlite3_open("data/portfolio.db", &db) != SQLITE_OK) {
-            std::cout << "[DB] Failed to open database\n"; return;
+            cout << "[DB] Failed to open database\n"; return;
         }
         sqlite3_exec(db,
             "CREATE TABLE IF NOT EXISTS stocks ("
@@ -56,7 +58,7 @@ public:
             "id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT, condition TEXT, threshold REAL, "
             "UNIQUE(ticker, condition, threshold));",
             nullptr, nullptr, nullptr);
-        std::cout << "[DB] Ready\n";
+        cout << "[DB] Ready\n";
     }
 
     ~Database() { sqlite3_close(db); }
@@ -72,8 +74,8 @@ public:
         return writeCount.load();
     }
 
-    void saveAlert(const std::string& ticker, const std::string& condition, double threshold) {
-        std::lock_guard<std::mutex> lock(mtx);
+    void saveAlert(const string& ticker, const string& condition, double threshold) {
+        lock_guard<mutex> lock(mtx);
         exec("INSERT OR IGNORE INTO active_alerts (ticker, condition, threshold) VALUES (?,?,?);",
             [&](sqlite3_stmt* s) {
                 sqlite3_bind_text(s, 1, ticker.c_str(), -1, SQLITE_TRANSIENT);
@@ -82,8 +84,8 @@ public:
             });
     }
 
-    void deleteActiveAlert(const std::string& ticker, const std::string& condition, double threshold) {
-        std::lock_guard<std::mutex> lock(mtx);
+    void deleteActiveAlert(const string& ticker, const string& condition, double threshold) {
+        lock_guard<mutex> lock(mtx);
         exec("DELETE FROM active_alerts WHERE ticker=? AND condition=? AND threshold=?;",
             [&](sqlite3_stmt* s) {
                 sqlite3_bind_text(s, 1, ticker.c_str(), -1, SQLITE_TRANSIENT);
@@ -93,13 +95,13 @@ public:
     }
 
     void clearActiveAlerts() {
-        std::lock_guard<std::mutex> lock(mtx);
+        lock_guard<mutex> lock(mtx);
         sqlite3_exec(db, "DELETE FROM active_alerts;", nullptr, nullptr, nullptr);
     }
 
-    std::vector<std::tuple<std::string, std::string, double>> getActiveAlerts() {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::vector<std::tuple<std::string, std::string, double>> out;
+    vector<tuple<string, string, double>> getActiveAlerts() {
+        lock_guard<mutex> lock(mtx);
+        vector<tuple<string, string, double>> out;
         sqlite3_stmt* s = nullptr;
         if (sqlite3_prepare_v2(db, "SELECT ticker, condition, threshold FROM active_alerts;", -1, &s, nullptr) == SQLITE_OK)
             while (sqlite3_step(s) == SQLITE_ROW)
@@ -110,9 +112,9 @@ public:
         return out;
     }
 
-    void saveAlertHistory(const std::string& ticker, const std::string& condition,
+    void saveAlertHistory(const string& ticker, const string& condition,
                           double threshold, double livePrice) {
-        std::lock_guard<std::mutex> lock(mtx);
+        lock_guard<mutex> lock(mtx);
         exec("INSERT INTO alert_history (ticker, condition, threshold, live_price) VALUES (?,?,?,?);",
             [&](sqlite3_stmt* s) {
                 sqlite3_bind_text(s, 1, ticker.c_str(), -1, SQLITE_TRANSIENT);
@@ -122,9 +124,9 @@ public:
             });
     }
 
-    void dismissAlertHistory(const std::string& ticker, const std::string& condition,
-                              double threshold, const std::string& timestamp) {
-        std::lock_guard<std::mutex> lock(mtx);
+    void dismissAlertHistory(const string& ticker, const string& condition,
+                              double threshold, const string& timestamp) {
+        lock_guard<mutex> lock(mtx);
         exec("DELETE FROM alert_history WHERE ticker=? AND condition=? AND threshold=? AND timestamp=?;",
             [&](sqlite3_stmt* s) {
                 sqlite3_bind_text(s, 1, ticker.c_str(), -1, SQLITE_TRANSIENT);
@@ -135,14 +137,14 @@ public:
     }
 
     void clearAlertHistory() {
-        std::lock_guard<std::mutex> lock(mtx);
+        lock_guard<mutex> lock(mtx);
         sqlite3_exec(db, "DELETE FROM alert_history;", nullptr, nullptr, nullptr);
-        std::cout << "[DB] Alert history cleared\n";
+        cout << "[DB] Alert history cleared\n";
     }
 
-    std::vector<std::tuple<std::string, std::string, double, double, std::string>> getAlertHistory() {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::vector<std::tuple<std::string, std::string, double, double, std::string>> out;
+    vector<tuple<string, string, double, double, string>> getAlertHistory() {
+        lock_guard<mutex> lock(mtx);
+        vector<tuple<string, string, double, double, string>> out;
         sqlite3_stmt* s = nullptr;
         if (sqlite3_prepare_v2(db,
             "SELECT ticker, condition, threshold, live_price, timestamp "
@@ -158,14 +160,14 @@ public:
     }
 
     void savePortfolioSnapshot(double value) {
-        std::lock_guard<std::mutex> lock(mtx);
+        lock_guard<mutex> lock(mtx);
         exec("INSERT INTO portfolio_history (value) VALUES (?);",
             [&](sqlite3_stmt* s) { sqlite3_bind_double(s, 1, value); });
     }
 
-    std::vector<std::pair<double, std::string>> getPortfolioHistory(int limit = 200) {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::vector<std::pair<double, std::string>> out;
+    vector<pair<double, string>> getPortfolioHistory(int limit = 200) {
+        lock_guard<mutex> lock(mtx);
+        vector<pair<double, string>> out;
         sqlite3_stmt* s = nullptr;
         if (sqlite3_prepare_v2(db,
             "SELECT value, timestamp FROM portfolio_history ORDER BY id DESC LIMIT ?;",
@@ -175,12 +177,12 @@ public:
                 out.push_back({ sqlite3_column_double(s,0), (const char*)sqlite3_column_text(s,1) });
         }
         sqlite3_finalize(s);
-        std::reverse(out.begin(), out.end());
+        reverse(out.begin(), out.end());
         return out;
     }
 
-    void saveStock(const std::string& ticker, double buyPrice, int quantity) {
-        std::lock_guard<std::mutex> lock(mtx);
+    void saveStock(const string& ticker, double buyPrice, int quantity) {
+        lock_guard<mutex> lock(mtx);
         exec("INSERT INTO stocks (ticker, buy_price, quantity) VALUES (?,?,?);",
             [&](sqlite3_stmt* s) {
                 sqlite3_bind_text(s, 1, ticker.c_str(), -1, SQLITE_TRANSIENT);
@@ -189,15 +191,15 @@ public:
             });
     }
 
-    void deleteStock(const std::string& ticker) {
-        std::lock_guard<std::mutex> lock(mtx);
+    void deleteStock(const string& ticker) {
+        lock_guard<mutex> lock(mtx);
         exec("DELETE FROM stocks WHERE ticker=?;",
             [&](sqlite3_stmt* s) { sqlite3_bind_text(s, 1, ticker.c_str(), -1, SQLITE_TRANSIENT); });
     }
 
-    std::vector<std::tuple<std::string, double, int>> getAllStocks() {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::vector<std::tuple<std::string, double, int>> out;
+    vector<tuple<string, double, int>> getAllStocks() {
+        lock_guard<mutex> lock(mtx);
+        vector<tuple<string, double, int>> out;
         sqlite3_stmt* s = nullptr;
         if (sqlite3_prepare_v2(db, "SELECT ticker, buy_price, quantity FROM stocks;", -1, &s, nullptr) == SQLITE_OK)
             while (sqlite3_step(s) == SQLITE_ROW)
@@ -209,7 +211,7 @@ public:
     }
 
     int getStockCount() {
-        std::lock_guard<std::mutex> lock(mtx);
+        lock_guard<mutex> lock(mtx);
         int count = 0;
         sqlite3_stmt* s = nullptr;
         if (sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM stocks;", -1, &s, nullptr) == SQLITE_OK)
