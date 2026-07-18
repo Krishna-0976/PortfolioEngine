@@ -6,18 +6,30 @@
 #include <algorithm>
 #include <mutex>
 #include <functional>
+#include <chrono>
+#include <atomic>
 
 class Database {
 private:
     sqlite3* db;
     std::mutex mtx;
+    std::atomic<long long> totalWriteMicros{0};
+    std::atomic<long long> writeCount{0};
 
     bool exec(const char* sql, const std::function<void(sqlite3_stmt*)>& bind) {
+        auto start = std::chrono::steady_clock::now();
+
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
         bind(stmt);
         bool ok = sqlite3_step(stmt) == SQLITE_DONE;
         sqlite3_finalize(stmt);
+
+        auto end = std::chrono::steady_clock::now();
+        auto micros = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        totalWriteMicros += micros;
+        writeCount++;
+
         return ok;
     }
 
@@ -49,7 +61,16 @@ public:
 
     ~Database() { sqlite3_close(db); }
 
-    // ── Active alerts ─────────────────────────────────────────────────────────
+    double getAverageWriteLatencyMs() {
+        long long count = writeCount.load();
+        if (count == 0) return 0.0;
+        double avgMicros = (double)totalWriteMicros.load() / (double)count;
+        return avgMicros / 1000.0;
+    }
+
+    long long getWriteCount() {
+        return writeCount.load();
+    }
 
     void saveAlert(const std::string& ticker, const std::string& condition, double threshold) {
         std::lock_guard<std::mutex> lock(mtx);
@@ -88,8 +109,6 @@ public:
         sqlite3_finalize(s);
         return out;
     }
-
-    // ── Alert history ─────────────────────────────────────────────────────────
 
     void saveAlertHistory(const std::string& ticker, const std::string& condition,
                           double threshold, double livePrice) {
@@ -138,8 +157,6 @@ public:
         return out;
     }
 
-    // ── Portfolio history ─────────────────────────────────────────────────────
-
     void savePortfolioSnapshot(double value) {
         std::lock_guard<std::mutex> lock(mtx);
         exec("INSERT INTO portfolio_history (value) VALUES (?);",
@@ -161,8 +178,6 @@ public:
         std::reverse(out.begin(), out.end());
         return out;
     }
-
-    // ── Stocks ────────────────────────────────────────────────────────────────
 
     void saveStock(const std::string& ticker, double buyPrice, int quantity) {
         std::lock_guard<std::mutex> lock(mtx);

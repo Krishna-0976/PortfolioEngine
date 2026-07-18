@@ -12,12 +12,11 @@ struct Alert {
     std::string ticker;
     double threshold;
     std::string condition;
-    bool operator>(const Alert& other) const { return threshold > other.threshold; }
 };
 
 class AlertEngine {
 private:
-    std::priority_queue<Alert, std::vector<Alert>, std::greater<Alert>> minHeap;
+    std::unordered_map<std::string, std::vector<Alert>> alertsByTicker;
     Database* db = nullptr;
     std::unordered_map<std::string, bool> firedState;
     std::mutex mtx;
@@ -47,7 +46,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
         for (auto& row : active) {
             Alert a{ std::get<0>(row), std::get<2>(row), std::get<1>(row) };
-            minHeap.push(a);
+            alertsByTicker[a.ticker].push_back(a);
             std::string key = alertKey(a.ticker, a.condition, a.threshold);
             if (firedState.find(key) == firedState.end())
                 firedState[key] = false;
@@ -58,7 +57,7 @@ public:
     void addAlert(const std::string& ticker, double threshold, const std::string& condition) {
         {
             std::lock_guard<std::mutex> lock(mtx);
-            minHeap.push({ ticker, threshold, condition });
+            alertsByTicker[ticker].push_back({ ticker, threshold, condition });
             firedState[alertKey(ticker, condition, threshold)] = false;
         }
         if (db) db->saveAlert(ticker, condition, threshold);
@@ -67,13 +66,13 @@ public:
 
     void removeAlert(const std::string& ticker, const std::string& condition, double threshold) {
         std::lock_guard<std::mutex> lock(mtx);
-        std::vector<Alert> remaining;
-        while (!minHeap.empty()) {
-            Alert top = minHeap.top(); minHeap.pop();
-            if (!(top.ticker == ticker && top.condition == condition && top.threshold == threshold))
-                remaining.push_back(top);
+        auto it = alertsByTicker.find(ticker);
+        if (it != alertsByTicker.end()) {
+            auto& vec = it->second;
+            vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const Alert& a) {
+                return a.condition == condition && a.threshold == threshold;
+            }), vec.end());
         }
-        for (auto& a : remaining) minHeap.push(a);
         firedState.erase(alertKey(ticker, condition, threshold));
         std::cout << "[Alert] Removed: " << ticker << " " << condition << " $" << threshold << "\n";
     }
@@ -88,27 +87,24 @@ public:
         std::vector<std::tuple<std::string, double, double>> triggered;
         {
             std::lock_guard<std::mutex> lock(mtx);
-            std::vector<Alert> remaining;
-            while (!minHeap.empty()) {
-                Alert top = minHeap.top(); minHeap.pop();
-                if (top.ticker == ticker) {
-                    std::string key = alertKey(top.ticker, top.condition, top.threshold);
-                    bool met     = (top.condition == "BELOW" && livePrice <  top.threshold)
-                                || (top.condition == "ABOVE" && livePrice >  top.threshold);
-                    bool cleared = (top.condition == "BELOW" && livePrice >= top.threshold)
-                                || (top.condition == "ABOVE" && livePrice <= top.threshold);
-                    if (met && !firedState[key]) {
-                        std::cout << "[ALERT] " << ticker << " " << top.condition
-                                  << " $" << top.threshold << " | Live: $" << livePrice << "\n";
-                        triggered.push_back({ top.condition, top.threshold, livePrice });
-                        firedState[key] = true;
-                    } else if (cleared) {
-                        firedState[key] = false;
-                    }
+            auto it = alertsByTicker.find(ticker);
+            if (it == alertsByTicker.end()) return;
+
+            for (auto& a : it->second) {
+                std::string key = alertKey(a.ticker, a.condition, a.threshold);
+                bool met     = (a.condition == "BELOW" && livePrice <  a.threshold)
+                            || (a.condition == "ABOVE" && livePrice >  a.threshold);
+                bool cleared = (a.condition == "BELOW" && livePrice >= a.threshold)
+                            || (a.condition == "ABOVE" && livePrice <= a.threshold);
+                if (met && !firedState[key]) {
+                    std::cout << "[ALERT] " << ticker << " " << a.condition
+                              << " $" << a.threshold << " | Live: $" << livePrice << "\n";
+                    triggered.push_back({ a.condition, a.threshold, livePrice });
+                    firedState[key] = true;
+                } else if (cleared) {
+                    firedState[key] = false;
                 }
-                remaining.push_back(top);
             }
-            for (auto& a : remaining) minHeap.push(a);
         }
         if (db)
             for (auto& t : triggered)
@@ -117,13 +113,15 @@ public:
 
     void clearAllAlerts() {
         std::lock_guard<std::mutex> lock(mtx);
-        while (!minHeap.empty()) minHeap.pop();
+        alertsByTicker.clear();
         firedState.clear();
         std::cout << "[AlertEngine] All alerts cleared.\n";
     }
 
     int size() {
         std::lock_guard<std::mutex> lock(mtx);
-        return (int)minHeap.size();
+        int total = 0;
+        for (auto& pair : alertsByTicker) total += (int)pair.second.size();
+        return total;
     }
 };

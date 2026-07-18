@@ -17,9 +17,6 @@ private:
     Database&         db;
     std::string       apiKey;
 
-    // Tracks how often incoming HTTP requests are served from the in-memory
-    // price cache vs. requiring a live Finnhub API call. This is the real,
-    // measured number behind the "reduced API calls" resume claim.
     std::atomic<long long> totalPriceRequests{0};
     std::atomic<long long> cacheServedRequests{0};
 
@@ -44,7 +41,7 @@ public:
                 totalPriceRequests++;
                 price = monitor.getCachedPrice(ticker);
                 if (price > 0) {
-                    cacheServedRequests++; // served from memory, no Finnhub call made
+                    cacheServedRequests++;
                 } else {
                     httplib::Client cli("https://finnhub.io");
                     std::string path = "/api/v1/quote?symbol=" + ticker + "&token=" + apiKey;
@@ -65,7 +62,7 @@ public:
             for (auto& s : monitor.getPortfolio()) {
                 totalPriceRequests++;
                 double livePrice = monitor.getCachedPrice(s.ticker);
-                if (livePrice > 0) cacheServedRequests++; // served from memory
+                if (livePrice > 0) cacheServedRequests++;
                 double pnl = livePrice > 0 ? (livePrice - s.buyPrice) * s.quantity : 0.0;
                 result.push_back({
                     {"ticker", s.ticker}, {"buyPrice", s.buyPrice},
@@ -76,8 +73,6 @@ public:
             res.set_content(result.dump(), "application/json");
         });
 
-        // New: real-time view of cache effectiveness. Hit this while load-testing
-        // /price or /portfolio to get your actual "% API calls avoided" number.
         svr.Get("/cachestats", [this](const httplib::Request&, httplib::Response& res) {
             long long total  = totalPriceRequests.load();
             long long served = cacheServedRequests.load();
@@ -86,6 +81,15 @@ public:
                 {"totalRequests", total},
                 {"cacheServedRequests", served},
                 {"cacheHitRatePercent", hitRate}
+            };
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_content(result.dump(), "application/json");
+        });
+
+        svr.Get("/dbstats", [this](const httplib::Request&, httplib::Response& res) {
+            json result = {
+                {"writeCount", db.getWriteCount()},
+                {"averageWriteLatencyMs", db.getAverageWriteLatencyMs()}
             };
             res.set_header("Access-Control-Allow-Origin", "*");
             res.set_content(result.dump(), "application/json");

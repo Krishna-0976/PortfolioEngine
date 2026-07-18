@@ -28,8 +28,6 @@ int main() {
 
     Database db;
 
-    db.clearAlertHistory();
-
     AlertEngine engine;
     engine.setDatabase(&db);
     engine.loadFiredStateFromHistory();
